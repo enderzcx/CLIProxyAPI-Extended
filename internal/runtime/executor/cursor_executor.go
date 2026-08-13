@@ -1141,6 +1141,9 @@ func resolveCursorDeclaredToolName(tools []cursorproto.McpToolDef, aliases ...st
 	}
 	for _, alias := range aliases {
 		for _, tool := range tools {
+			if strings.HasPrefix(tool.Name, cursorExternalToolPrefix) {
+				continue
+			}
 			if strings.Contains(strings.ToLower(tool.Name), strings.ToLower(alias)) {
 				return tool.Name
 			}

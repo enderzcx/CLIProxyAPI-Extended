@@ -137,4 +137,8 @@ func TestCursorBuiltinShellToolUsesExternalMcpAlias(t *testing.T) {
 	if got := cursorUpstreamToolName("search_tool"); got != "search_tool" {
 		t.Fatalf("unrelated tool name changed to %q", got)
 	}
+	tools := []cursorproto.McpToolDef{{Name: upstream}}
+	if got := resolveCursorDeclaredToolName(tools, "run_terminal_command", "shell"); got != "" {
+		t.Fatalf("external MCP alias was incorrectly bridged back to builtin shell as %q", got)
+	}
 }
