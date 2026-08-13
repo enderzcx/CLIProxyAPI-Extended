@@ -295,7 +295,7 @@ func (e *CursorExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, r
 
 	parsed := parseOpenAIRequest(payload)
 	ccSessId := extractClaudeCodeSessionId(req.Payload)
-	conversationId := deriveConversationId(apiKeyFromContext(ctx), ccSessId, parsed.SystemPrompt)
+	conversationId := deriveConversationId(apiKeyFromContext(ctx), ccSessId, parsed.Model, parsed.SystemPrompt, parsed.Messages)
 	params := buildRunRequestParams(parsed, conversationId)
 
 	requestBytes := cursorproto.EncodeRunRequest(params)
@@ -391,7 +391,7 @@ func (e *CursorExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
 	log.Debugf("cursor: parsed request: model=%s userText=%d chars, turns=%d, tools=%d, toolResults=%d",
 		parsed.Model, len(parsed.UserText), len(parsed.Turns), len(parsed.Tools), len(parsed.ToolResults))
 
-	conversationId := deriveConversationId(apiKeyFromContext(ctx), ccSessionId, parsed.SystemPrompt)
+	conversationId := deriveConversationId(apiKeyFromContext(ctx), ccSessionId, parsed.Model, parsed.SystemPrompt, parsed.Messages)
 	authID := auth.ID // e.g. "cursor.json" or "cursor-account2.json"
 	log.Debugf("cursor: conversationId=%s authID=%s", conversationId, authID)
 
@@ -1382,14 +1382,18 @@ func extractClaudeCodeSessionId(payload []byte) string {
 }
 
 // deriveConversationId generates a deterministic conversation_id.
-// Priority: session_id (stable across resume) > system prompt hash (fallback).
-func deriveConversationId(apiKey, sessionId, systemPrompt string) string {
+// Priority: session_id (stable across resume) > model/system/first-user hash (fallback).
+func deriveConversationId(apiKey, sessionId, model, systemPrompt string, messages []gjson.Result) string {
 	var input string
 	if sessionId != "" {
 		// Best: use Claude Code's session_id — stable even across resume
 		input = "cursor-conv:" + apiKey + ":" + sessionId
 	} else {
-		// Fallback: use system prompt content minus volatile cch
+		// Responses clients such as Grok Build and Codex commonly omit metadata.session_id
+		// and instructions. Include the model and first user message so independent
+		// conversations sharing one gateway API key do not collapse onto the same
+		// default-system-prompt session. The first user message remains present on
+		// subsequent tool-result requests, keeping the key stable across turns.
 		stable := systemPrompt
 		if idx := strings.Index(stable, "cch="); idx >= 0 {
 			end := strings.IndexAny(stable[idx:], "; \n")
@@ -1400,7 +1404,17 @@ func deriveConversationId(apiKey, sessionId, systemPrompt string) string {
 		if len(stable) > 500 {
 			stable = stable[:500]
 		}
-		input = "cursor-conv:" + apiKey + ":" + stable
+		firstUserContent := ""
+		for _, msg := range messages {
+			if msg.Get("role").String() == "user" {
+				firstUserContent = extractTextContent(msg.Get("content"))
+				break
+			}
+		}
+		if len(firstUserContent) > 500 {
+			firstUserContent = firstUserContent[:500]
+		}
+		input = "cursor-conv:" + apiKey + ":" + model + ":" + stable + ":" + firstUserContent
 	}
 	h := sha256.Sum256([]byte(input))
 	s := hex.EncodeToString(h[:16])
