@@ -63,10 +63,23 @@ type cursorSession struct {
 	pending      []pendingMcpExec
 	cancel       context.CancelFunc // cancels the session-scoped heartbeat (NOT tied to HTTP request)
 	createdAt    time.Time
-	authID       string                                     // auth file ID that created this session (for multi-account isolation)
-	toolResultCh chan []toolResultInfo                      // receives tool results from the next HTTP request
-	resumeOutCh  chan cliproxyexecutor.StreamChunk          // output channel for resumed response
-	switchOutput func(ch chan cliproxyexecutor.StreamChunk) // callback to switch output channel
+	authID       string                                                                          // auth file ID that created this session (for multi-account isolation)
+	toolResultCh chan []toolResultInfo                                                           // receives tool results from the next HTTP request
+	resumeOutCh  chan cliproxyexecutor.StreamChunk                                               // output channel for resumed response
+	switchOutput func(ch chan cliproxyexecutor.StreamChunk, translation cursorStreamTranslation) // switches output and request-scoped translation state
+}
+
+// cursorStreamTranslation is request-scoped. A Cursor H2 tool session outlives
+// the first HTTP request, so resumed output must use the second request's live
+// context and payload when translating back to the client protocol.
+type cursorStreamTranslation struct {
+	ctx             context.Context
+	from            sdktranslator.Format
+	to              sdktranslator.Format
+	model           string
+	originalPayload []byte
+	payload         []byte
+	needsTranslate  bool
 }
 
 type pendingMcpExec struct {
@@ -524,6 +537,21 @@ func (e *CursorExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
 	// it switches to `resumeOutCh` (created by resumeWithToolResults).
 	var outMu sync.Mutex
 	currentOut := chunks
+	translation := cursorStreamTranslation{
+		ctx:             ctx,
+		from:            from,
+		to:              to,
+		model:           req.Model,
+		originalPayload: originalPayload,
+		payload:         payload,
+		needsTranslate:  needsTranslate,
+	}
+
+	translationSnapshot := func() cursorStreamTranslation {
+		outMu.Lock()
+		defer outMu.Unlock()
+		return translation
+	}
 
 	emitToOut := func(chunk cliproxyexecutor.StreamChunk) {
 		outMu.Lock()
@@ -544,8 +572,9 @@ func (e *CursorExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
 			chatId, created, parsed.Model, delta, fr)
 		sseLine := []byte("data: " + openaiJSON + "\n")
 
-		if needsTranslate {
-			translated := sdktranslator.TranslateStream(ctx, to, from, req.Model, originalPayload, payload, sseLine, &streamParam)
+		tr := translationSnapshot()
+		if tr.needsTranslate {
+			translated := sdktranslator.TranslateStream(tr.ctx, tr.to, tr.from, tr.model, tr.originalPayload, tr.payload, sseLine, &streamParam)
 			for _, t := range translated {
 				emitToOut(cliproxyexecutor.StreamChunk{Payload: bytes.Clone(t)})
 			}
@@ -555,8 +584,9 @@ func (e *CursorExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
 	}
 
 	sendDoneSwitchable := func() {
-		if needsTranslate {
-			done := sdktranslator.TranslateStream(ctx, to, from, req.Model, originalPayload, payload, []byte("data: [DONE]\n"), &streamParam)
+		tr := translationSnapshot()
+		if tr.needsTranslate {
+			done := sdktranslator.TranslateStream(tr.ctx, tr.to, tr.from, tr.model, tr.originalPayload, tr.payload, []byte("data: [DONE]\n"), &streamParam)
 			for _, d := range done {
 				emitToOut(cliproxyexecutor.StreamChunk{Payload: bytes.Clone(d)})
 			}
@@ -639,9 +669,10 @@ func (e *CursorExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
 					authID:       authID,
 					toolResultCh: toolResultCh, // reuse same channel across rounds
 					resumeOutCh:  resumeOut,
-					switchOutput: func(ch chan cliproxyexecutor.StreamChunk) {
+					switchOutput: func(ch chan cliproxyexecutor.StreamChunk, next cursorStreamTranslation) {
 						outMu.Lock()
 						currentOut = ch
+						translation = next
 						// Reset translator state so the new HTTP response gets
 						// a fresh message_start, content_block_start, etc.
 						streamParam = nil
@@ -709,8 +740,9 @@ func (e *CursorExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
 		openaiJSON := fmt.Sprintf(`{"id":"%s","object":"chat.completion.chunk","created":%d,"model":"%s","choices":[{"index":0,"delta":{},"finish_reason":%s}],"usage":{"prompt_tokens":%d,"completion_tokens":%d,"total_tokens":%d}}`,
 			chatId, created, parsed.Model, fr, inputTok, outputTok, inputTok+outputTok)
 		sseLine := []byte("data: " + openaiJSON + "\n")
-		if needsTranslate {
-			translated := sdktranslator.TranslateStream(ctx, to, from, req.Model, originalPayload, payload, sseLine, &streamParam)
+		tr := translationSnapshot()
+		if tr.needsTranslate {
+			translated := sdktranslator.TranslateStream(tr.ctx, tr.to, tr.from, tr.model, tr.originalPayload, tr.payload, sseLine, &streamParam)
 			for _, t := range translated {
 				emitToOut(cliproxyexecutor.StreamChunk{Payload: bytes.Clone(t)})
 			}
@@ -772,7 +804,15 @@ func (e *CursorExecutor) resumeWithToolResults(
 	// processH2SessionFrames unblocks and starts emitting text, it writes
 	// to the resumeOutCh which the new HTTP handler is reading from.
 	if session.switchOutput != nil {
-		session.switchOutput(session.resumeOutCh)
+		session.switchOutput(session.resumeOutCh, cursorStreamTranslation{
+			ctx:             ctx,
+			from:            from,
+			to:              to,
+			model:           req.Model,
+			originalPayload: originalPayload,
+			payload:         payload,
+			needsTranslate:  needsTranslate,
+		})
 	}
 
 	// Inject tool results — this unblocks the waiting processH2SessionFrames

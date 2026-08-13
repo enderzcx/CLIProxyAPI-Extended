@@ -1,9 +1,12 @@
 package executor
 
 import (
+	"context"
 	"testing"
 
 	cursorproto "github.com/router-for-me/CLIProxyAPI/v6/internal/auth/cursor/proto"
+	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/executor"
+	sdktranslator "github.com/router-for-me/CLIProxyAPI/v6/sdk/translator"
 	"github.com/tidwall/gjson"
 )
 
@@ -140,5 +143,49 @@ func TestCursorBuiltinShellToolUsesExternalMcpAlias(t *testing.T) {
 	tools := []cursorproto.McpToolDef{{Name: upstream}}
 	if got := resolveCursorDeclaredToolName(tools, "run_terminal_command", "shell"); got != "" {
 		t.Fatalf("external MCP alias was incorrectly bridged back to builtin shell as %q", got)
+	}
+}
+
+func TestResumeWithToolResultsSwitchesToCurrentRequestTranslation(t *testing.T) {
+	type contextKey string
+	ctx := context.WithValue(context.Background(), contextKey("request"), "second")
+	toolResults := make(chan []toolResultInfo, 1)
+	resumeOut := make(chan cliproxyexecutor.StreamChunk, 1)
+	var switched cursorStreamTranslation
+	session := &cursorSession{
+		toolResultCh: toolResults,
+		resumeOutCh:  resumeOut,
+		switchOutput: func(ch chan cliproxyexecutor.StreamChunk, translation cursorStreamTranslation) {
+			if ch != resumeOut {
+				t.Fatal("resume output channel was not selected")
+			}
+			switched = translation
+		},
+	}
+	parsed := &parsedOpenAIRequest{ToolResults: []toolResultInfo{{ToolCallId: "call-1", Content: "/workspace"}}}
+	from := sdktranslator.FromString("claude")
+	to := sdktranslator.FromString("openai")
+	req := cliproxyexecutor.Request{Model: "cursor-grok-4.6-high"}
+
+	result, err := (&CursorExecutor{}).resumeWithToolResults(
+		ctx, session, parsed, from, to, req,
+		[]byte(`{"messages":[{"role":"user"}]}`),
+		[]byte(`{"messages":[{"role":"tool"}]}`),
+		true,
+	)
+	if err != nil {
+		t.Fatalf("resumeWithToolResults() error = %v", err)
+	}
+	if result.Chunks != resumeOut {
+		t.Fatal("resumeWithToolResults() returned the wrong output channel")
+	}
+	if switched.ctx.Value(contextKey("request")) != "second" {
+		t.Fatal("resumed translation kept the stale request context")
+	}
+	if switched.model != req.Model || !switched.needsTranslate {
+		t.Fatalf("resumed translation = %#v", switched)
+	}
+	if got := <-toolResults; len(got) != 1 || got[0].ToolCallId != "call-1" {
+		t.Fatalf("injected tool results = %#v", got)
 	}
 }
