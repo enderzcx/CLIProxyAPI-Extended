@@ -1215,7 +1215,7 @@ type toolResultInfo struct {
 // actually emitting the corresponding MCP call. Coding clients interpret that
 // as an incomplete turn and retry the entire Responses request. Keep this hint
 // conditional on declared tools so ordinary text-only requests are unchanged.
-const cursorToolCommitDirective = "You are serving an API request that includes executable tools. When a tool is needed to answer, issue the actual tool call instead of describing the call in prose. Answer directly only when no tool is needed. Do not claim a tool ran unless you called it, and do not emit duplicate calls."
+const cursorToolCommitDirective = "You are serving an API request that includes executable tools. When a tool is needed to answer, issue the actual tool call instead of describing the call in prose. Answer directly only when no tool is needed. Execute tools sequentially: issue exactly one tool call, wait for its result, and only then issue the next tool call. Do not batch or parallelize tool calls. Do not claim a tool ran unless you called it, and do not emit duplicate calls."
 
 const cursorExternalToolPrefix = "beefapi_external__"
 

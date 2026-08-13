@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	cursorproto "github.com/router-for-me/CLIProxyAPI/v6/internal/auth/cursor/proto"
@@ -108,6 +109,9 @@ func TestParseOpenAIRequestAddsToolCommitDirective(t *testing.T) {
 
 	if got := parsed.UserText; got != cursorToolCommitDirective+"\n\nRun pwd with the shell tool" {
 		t.Fatalf("user text = %q", got)
+	}
+	if !strings.Contains(parsed.UserText, "Do not batch or parallelize tool calls") {
+		t.Fatalf("tool directive does not declare Cursor's sequential tool contract: %q", parsed.UserText)
 	}
 }
 
