@@ -185,7 +185,7 @@ func buildResponsesCompletedEvent(st *oaiToResponsesState, requestRawJSON []byte
 		completed, _ = sjson.SetBytes(completed, "response.usage.input_tokens", st.PromptTokens)
 		completed, _ = sjson.SetBytes(completed, "response.usage.input_tokens_details.cached_tokens", st.CachedTokens)
 		completed, _ = sjson.SetBytes(completed, "response.usage.output_tokens", st.CompletionTokens)
-		completed, _ = sjson.SetRawBytes(completed, "response.usage.output_tokens_details", []byte(`{}`))
+		completed, _ = sjson.SetBytes(completed, "response.usage.output_tokens_details.reasoning_tokens", 0)
 		if st.ReasoningTokens > 0 {
 			completed, _ = sjson.SetBytes(completed, "response.usage.output_tokens_details.reasoning_tokens", st.ReasoningTokens)
 		}
@@ -783,7 +783,7 @@ func ConvertOpenAIChatCompletionsResponseToOpenAIResponsesNonStream(_ context.Co
 				resp, _ = sjson.SetBytes(resp, "usage.input_tokens_details.cached_tokens", d.Int())
 			}
 			resp, _ = sjson.SetBytes(resp, "usage.output_tokens", usage.Get("completion_tokens").Int())
-			resp, _ = sjson.SetRawBytes(resp, "usage.output_tokens_details", []byte(`{}`))
+			resp, _ = sjson.SetBytes(resp, "usage.output_tokens_details.reasoning_tokens", 0)
 			// Reasoning tokens not available in Chat Completions; set only if present under output_tokens_details
 			if d := usage.Get("output_tokens_details.reasoning_tokens"); d.Exists() {
 				resp, _ = sjson.SetBytes(resp, "usage.output_tokens_details.reasoning_tokens", d.Int())

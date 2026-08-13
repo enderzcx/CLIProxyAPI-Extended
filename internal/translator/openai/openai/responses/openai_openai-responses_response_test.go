@@ -137,6 +137,9 @@ func TestConvertOpenAIChatCompletionsResponseToOpenAIResponses_ResponseCompleted
 			if !completedData.Get("response.usage.output_tokens_details").IsObject() {
 				t.Fatalf("expected response.usage.output_tokens_details object, got %s", completedData.Get("response.usage.output_tokens_details").Raw)
 			}
+			if !completedData.Get("response.usage.output_tokens_details.reasoning_tokens").Exists() {
+				t.Fatal("expected response.usage.output_tokens_details.reasoning_tokens")
+			}
 		})
 	}
 }
