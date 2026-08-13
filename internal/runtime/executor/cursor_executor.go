@@ -1059,7 +1059,45 @@ func processH2SessionFrames(
 				case cursorproto.ServerMsgExecGrepArgs:
 					stream.Write(cursorproto.FrameConnectMessage(cursorproto.EncodeExecGrepError(msg.ExecMsgId, msg.ExecId, rejectReason), 0))
 				case cursorproto.ServerMsgExecShellArgs, cursorproto.ServerMsgExecShellStream:
-					stream.Write(cursorproto.FrameConnectMessage(cursorproto.EncodeExecShellRejected(msg.ExecMsgId, msg.ExecId, msg.Command, msg.WorkingDirectory, rejectReason), 0))
+					toolName := resolveCursorDeclaredToolName(mcpTools, "run_terminal_command", "run_terminal_cmd", "bash", "shell", "terminal")
+					if toolName == "" || onMcpExec == nil {
+						stream.Write(cursorproto.FrameConnectMessage(cursorproto.EncodeExecShellRejected(msg.ExecMsgId, msg.ExecId, msg.Command, msg.WorkingDirectory, rejectReason), 0))
+						continue
+					}
+					args := map[string]any{"command": msg.Command}
+					if msg.WorkingDirectory != "" {
+						args["working_directory"] = msg.WorkingDirectory
+					}
+					argsJSON, _ := json.Marshal(args)
+					pending := pendingMcpExec{
+						ExecMsgId:  msg.ExecMsgId,
+						ExecId:     msg.ExecId,
+						ToolCallId: uuid.New().String(),
+						ToolName:   toolName,
+						Args:       string(argsJSON),
+					}
+					log.Debugf("cursor: bridging builtin shell to declared tool=%s", toolName)
+					onMcpExec(pending)
+					if toolResultCh == nil {
+						return nil
+					}
+					select {
+					case <-ctx.Done():
+						return ctx.Err()
+					case <-stream.Done():
+						return stream.Err()
+					case toolResults, ok := <-toolResultCh:
+						if !ok {
+							return nil
+						}
+						for _, tr := range toolResults {
+							if cursorToolCallIDsMatch(tr.ToolCallId, pending.ToolCallId) {
+								resultBytes := cursorproto.EncodeExecMcpResult(pending.ExecMsgId, pending.ExecId, tr.Content, false)
+								stream.Write(cursorproto.FrameConnectMessage(resultBytes, 0))
+								break
+							}
+						}
+					}
 				case cursorproto.ServerMsgExecBgShellSpawn:
 					stream.Write(cursorproto.FrameConnectMessage(cursorproto.EncodeExecBackgroundShellSpawnRejected(msg.ExecMsgId, msg.ExecId, msg.Command, msg.WorkingDirectory, rejectReason), 0))
 				case cursorproto.ServerMsgExecFetchArgs:
@@ -1076,6 +1114,24 @@ func processH2SessionFrames(
 			return stream.Err()
 		}
 	}
+}
+
+func resolveCursorDeclaredToolName(tools []cursorproto.McpToolDef, aliases ...string) string {
+	for _, alias := range aliases {
+		for _, tool := range tools {
+			if strings.EqualFold(strings.TrimSpace(tool.Name), alias) {
+				return tool.Name
+			}
+		}
+	}
+	for _, alias := range aliases {
+		for _, tool := range tools {
+			if strings.Contains(strings.ToLower(tool.Name), strings.ToLower(alias)) {
+				return tool.Name
+			}
+		}
+	}
+	return ""
 }
 
 // --- OpenAI request parsing ---

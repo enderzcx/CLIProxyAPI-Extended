@@ -3,6 +3,7 @@ package executor
 import (
 	"testing"
 
+	cursorproto "github.com/router-for-me/CLIProxyAPI/v6/internal/auth/cursor/proto"
 	"github.com/tidwall/gjson"
 )
 
@@ -84,5 +85,24 @@ func TestCursorToolCommitDirectiveIsNotRepeated(t *testing.T) {
 
 	if got := parsed.UserText; got != cursorToolCommitDirective+"\n\nRun pwd" {
 		t.Fatalf("user text = %q", got)
+	}
+}
+
+func TestResolveCursorDeclaredToolNamePrefersExactShellAlias(t *testing.T) {
+	tools := []cursorproto.McpToolDef{
+		{Name: "search_tool"},
+		{Name: "run_terminal_command"},
+		{Name: "use_tool"},
+	}
+
+	if got := resolveCursorDeclaredToolName(tools, "run_terminal_command", "shell"); got != "run_terminal_command" {
+		t.Fatalf("tool name = %q", got)
+	}
+}
+
+func TestResolveCursorDeclaredToolNameDoesNotGuessUnrelatedTool(t *testing.T) {
+	tools := []cursorproto.McpToolDef{{Name: "search_tool"}, {Name: "use_tool"}}
+	if got := resolveCursorDeclaredToolName(tools, "run_terminal_command", "shell"); got != "" {
+		t.Fatalf("tool name = %q, want empty", got)
 	}
 }
