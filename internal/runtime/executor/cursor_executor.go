@@ -1037,7 +1037,7 @@ func processH2SessionFrames(
 
 						// Send MCP result
 						for _, tr := range toolResults {
-							if tr.ToolCallId == pending.ToolCallId {
+							if cursorToolCallIDsMatch(tr.ToolCallId, pending.ToolCallId) {
 								log.Debugf("cursor: sending inline MCP result for tool=%s", pending.ToolName)
 								resultBytes := cursorproto.EncodeExecMcpResult(pending.ExecMsgId, pending.ExecId, tr.Content, false)
 								stream.Write(cursorproto.FrameConnectMessage(resultBytes, 0))
@@ -1419,6 +1419,19 @@ func deriveConversationId(apiKey, sessionId, model, systemPrompt string, message
 	h := sha256.Sum256([]byte(input))
 	s := hex.EncodeToString(h[:16])
 	return fmt.Sprintf("%s-%s-%s-%s-%s", s[:8], s[8:12], s[12:16], s[16:20], s[20:32])
+}
+
+func cursorToolCallIDsMatch(clientID, pendingID string) bool {
+	pendingID = strings.TrimSpace(pendingID)
+	if pendingID == "" {
+		return false
+	}
+	for _, part := range strings.Split(clientID, "\n") {
+		if strings.TrimSpace(part) == pendingID {
+			return true
+		}
+	}
+	return false
 }
 
 func deriveSessionKey(clientKey string, model string, messages []gjson.Result) string {
