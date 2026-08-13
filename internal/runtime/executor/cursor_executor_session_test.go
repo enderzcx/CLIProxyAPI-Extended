@@ -83,6 +83,25 @@ func TestCursorToolCallIDsMatchCompositeResponsesID(t *testing.T) {
 	}
 }
 
+func TestBuildRunRequestParamsConvertsResponsesCustomTool(t *testing.T) {
+	parsed := parseOpenAIRequest([]byte(`{
+		"model":"cursor-grok-4.6-xhigh",
+		"messages":[{"role":"user","content":"patch file"}],
+		"tools":[{"type":"custom","name":"apply_patch","description":"Apply a patch","format":{"type":"text"}}]
+	}`))
+	params := buildRunRequestParams(parsed, "conv-custom-tool")
+	if len(params.McpTools) != 1 {
+		t.Fatalf("MCP tools = %d, want 1", len(params.McpTools))
+	}
+	tool := params.McpTools[0]
+	if tool.Name != "apply_patch" {
+		t.Fatalf("tool name = %q", tool.Name)
+	}
+	if got := gjson.GetBytes(tool.InputSchema, "properties.input.type").String(); got != "string" {
+		t.Fatalf("custom input schema type = %q", got)
+	}
+}
+
 func TestParseOpenAIRequestAddsToolCommitDirective(t *testing.T) {
 	payload := []byte(`{"model":"grok-4.6","messages":[{"role":"user","content":"Run pwd with the shell tool"}],"tools":[{"type":"function","function":{"name":"run_terminal_command","parameters":{"type":"object"}}}]}`)
 	parsed := parseOpenAIRequest(payload)

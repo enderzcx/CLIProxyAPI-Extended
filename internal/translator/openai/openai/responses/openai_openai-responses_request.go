@@ -132,7 +132,28 @@ func ConvertOpenAIResponsesRequestToOpenAIChatCompletions(modelName string, inpu
 				assistantMessage, _ = sjson.SetRawBytes(assistantMessage, "tool_calls.0", toolCall)
 				out, _ = sjson.SetRawBytes(out, "messages.-1", assistantMessage)
 
-			case "function_call_output":
+			case "custom_tool_call":
+				// Responses custom tools carry free-form text in `input`. Represent
+				// that text as a single JSON string argument while the request is in
+				// Chat Completions form; the response converter restores the custom
+				// tool event shape for clients such as Codex.
+				assistantMessage := []byte(`{"role":"assistant","tool_calls":[]}`)
+				toolCall := []byte(`{"id":"","type":"function","function":{"name":"","arguments":""}}`)
+				if callId := item.Get("call_id"); callId.Exists() {
+					toolCall, _ = sjson.SetBytes(toolCall, "id", cursorToolCallID(callId.String()))
+				}
+				if name := item.Get("name"); name.Exists() {
+					toolCall, _ = sjson.SetBytes(toolCall, "function.name", name.String())
+				}
+				customArgs := []byte(`{"input":""}`)
+				if input := item.Get("input"); input.Exists() {
+					customArgs, _ = sjson.SetBytes(customArgs, "input", input.String())
+				}
+				toolCall, _ = sjson.SetBytes(toolCall, "function.arguments", string(customArgs))
+				assistantMessage, _ = sjson.SetRawBytes(assistantMessage, "tool_calls.0", toolCall)
+				out, _ = sjson.SetRawBytes(out, "messages.-1", assistantMessage)
+
+			case "function_call_output", "custom_tool_call_output":
 				// Handle function call output conversion to tool message
 				toolMessage := []byte(`{"role":"tool","tool_call_id":"","content":""}`)
 

@@ -427,3 +427,38 @@ func TestConvertOpenAIChatCompletionsResponseToOpenAIResponses_FunctionCallDoneA
 		t.Fatalf("unexpected completed function_call order: %v", completedOrder)
 	}
 }
+
+func TestConvertOpenAIChatCompletionsResponseToOpenAIResponses_CustomToolEvents(t *testing.T) {
+	in := []string{
+		`data: {"id":"resp_custom","object":"chat.completion.chunk","created":1,"model":"model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_patch","type":"function","function":{"name":"apply_patch","arguments":"{\"input\":\"*** Begin Patch\"}"}}]},"finish_reason":null}]}`,
+		`data: {"id":"resp_custom","object":"chat.completion.chunk","created":1,"model":"model","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`,
+		`data: [DONE]`,
+	}
+	request := []byte(`{"model":"grok-4.6","tools":[{"type":"custom","name":"apply_patch","description":"Apply patch","format":{"type":"text"}}]}`)
+	var param any
+	var out [][]byte
+	for _, line := range in {
+		out = append(out, ConvertOpenAIChatCompletionsResponseToOpenAIResponses(context.Background(), "model", request, request, []byte(line), &param)...)
+	}
+	var added, inputDone, itemDone, completed bool
+	for _, chunk := range out {
+		ev, data := parseOpenAIResponsesSSEEvent(t, chunk)
+		switch ev {
+		case "response.output_item.added":
+			added = data.Get("item.type").String() == "custom_tool_call" && data.Get("item.name").String() == "apply_patch"
+		case "response.custom_tool_call_input.done":
+			inputDone = data.Get("input").String() == "*** Begin Patch"
+		case "response.output_item.done":
+			itemDone = data.Get("item.type").String() == "custom_tool_call" && data.Get("item.input").String() == "*** Begin Patch"
+		case "response.completed":
+			for _, item := range data.Get("response.output").Array() {
+				if item.Get("type").String() == "custom_tool_call" && item.Get("input").String() == "*** Begin Patch" {
+					completed = true
+				}
+			}
+		}
+	}
+	if !added || !inputDone || !itemDone || !completed {
+		t.Fatalf("custom tool events added=%v inputDone=%v itemDone=%v completed=%v", added, inputDone, itemDone, completed)
+	}
+}

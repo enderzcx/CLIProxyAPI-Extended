@@ -1451,11 +1451,25 @@ func buildRunRequestParams(parsed *parsedOpenAIRequest, conversationId string) *
 
 	// Convert OpenAI tools to McpToolDefs
 	for _, tool := range parsed.Tools {
-		fn := tool.Get("function")
+		var name, description string
+		var inputSchema json.RawMessage
+		if tool.Get("type").String() == "custom" {
+			name = tool.Get("name").String()
+			description = tool.Get("description").String()
+			inputSchema = json.RawMessage(`{"type":"object","properties":{"input":{"type":"string","description":"Raw custom tool input"}},"required":["input"],"additionalProperties":false}`)
+		} else {
+			fn := tool.Get("function")
+			name = fn.Get("name").String()
+			description = fn.Get("description").String()
+			inputSchema = json.RawMessage(fn.Get("parameters").Raw)
+		}
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
 		params.McpTools = append(params.McpTools, cursorproto.McpToolDef{
-			Name:        cursorUpstreamToolName(fn.Get("name").String()),
-			Description: fn.Get("description").String(),
-			InputSchema: json.RawMessage(fn.Get("parameters").Raw),
+			Name:        cursorUpstreamToolName(name),
+			Description: description,
+			InputSchema: inputSchema,
 		})
 	}
 
