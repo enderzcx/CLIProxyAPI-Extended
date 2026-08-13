@@ -56,3 +56,33 @@ func TestCursorToolCallIDsMatchCompositeResponsesID(t *testing.T) {
 		t.Fatal("unrelated synthetic item ID matched the pending Cursor call ID")
 	}
 }
+
+func TestParseOpenAIRequestAddsToolCommitDirective(t *testing.T) {
+	payload := []byte(`{"model":"grok-4.6","messages":[{"role":"user","content":"Run pwd with the shell tool"}],"tools":[{"type":"function","function":{"name":"run_terminal_command","parameters":{"type":"object"}}}]}`)
+	parsed := parseOpenAIRequest(payload)
+
+	if got := parsed.UserText; got != cursorToolCommitDirective+"\n\nRun pwd with the shell tool" {
+		t.Fatalf("user text = %q", got)
+	}
+}
+
+func TestParseOpenAIRequestDoesNotAddToolCommitDirectiveWithoutTools(t *testing.T) {
+	payload := []byte(`{"model":"grok-4.6","messages":[{"role":"user","content":"Say hello"}]}`)
+	parsed := parseOpenAIRequest(payload)
+
+	if got := parsed.UserText; got != "Say hello" {
+		t.Fatalf("user text = %q", got)
+	}
+}
+
+func TestCursorToolCommitDirectiveIsNotRepeated(t *testing.T) {
+	parsed := &parsedOpenAIRequest{
+		UserText: cursorToolCommitDirective + "\n\nRun pwd",
+		Tools:    responseMessages(`{"messages":[{}]}`),
+	}
+	applyCursorToolCommitDirective(parsed)
+
+	if got := parsed.UserText; got != cursorToolCommitDirective+"\n\nRun pwd" {
+		t.Fatalf("user text = %q", got)
+	}
+}

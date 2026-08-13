@@ -1097,6 +1097,23 @@ type toolResultInfo struct {
 	Content    string
 }
 
+// Cursor's AgentService can acknowledge a requested operation in prose without
+// actually emitting the corresponding MCP call. Coding clients interpret that
+// as an incomplete turn and retry the entire Responses request. Keep this hint
+// conditional on declared tools so ordinary text-only requests are unchanged.
+const cursorToolCommitDirective = "You are serving an API request that includes executable tools. When a tool is needed to answer, issue the actual tool call instead of describing the call in prose. Answer directly only when no tool is needed. Do not claim a tool ran unless you called it, and do not emit duplicate calls."
+
+func applyCursorToolCommitDirective(parsed *parsedOpenAIRequest) {
+	if parsed == nil || len(parsed.Tools) == 0 || len(parsed.ToolResults) > 0 {
+		return
+	}
+	userText := strings.TrimSpace(parsed.UserText)
+	if userText == "" || strings.Contains(userText, cursorToolCommitDirective) {
+		return
+	}
+	parsed.UserText = cursorToolCommitDirective + "\n\n" + userText
+}
+
 func parseOpenAIRequest(payload []byte) *parsedOpenAIRequest {
 	p := &parsedOpenAIRequest{
 		Model:  gjson.GetBytes(payload, "model").String(),
@@ -1168,6 +1185,7 @@ func parseOpenAIRequest(payload []byte) *parsedOpenAIRequest {
 
 	// Extract tools
 	p.Tools = gjson.GetBytes(payload, "tools").Array()
+	applyCursorToolCommitDirective(p)
 
 	return p
 }
