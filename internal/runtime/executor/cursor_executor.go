@@ -308,7 +308,7 @@ func (e *CursorExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, r
 
 	parsed := parseOpenAIRequest(payload)
 	ccSessId := extractClaudeCodeSessionId(req.Payload)
-	conversationId := deriveConversationId(apiKeyFromContext(ctx), ccSessId, parsed.Model, parsed.SystemPrompt, parsed.Messages)
+	conversationId := deriveConversationId(apiKeyFromContext(ctx), cursorPrimarySessionID(ccSessId, parsed), parsed.Model, parsed.SystemPrompt, parsed.Messages)
 	params := buildRunRequestParams(parsed, conversationId)
 
 	requestBytes := cursorproto.EncodeRunRequest(params)
@@ -404,7 +404,7 @@ func (e *CursorExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
 	log.Debugf("cursor: parsed request: model=%s userText=%d chars, turns=%d, tools=%d, toolResults=%d",
 		parsed.Model, len(parsed.UserText), len(parsed.Turns), len(parsed.Tools), len(parsed.ToolResults))
 
-	conversationId := deriveConversationId(apiKeyFromContext(ctx), ccSessionId, parsed.Model, parsed.SystemPrompt, parsed.Messages)
+	conversationId := deriveConversationId(apiKeyFromContext(ctx), cursorPrimarySessionID(ccSessionId, parsed), parsed.Model, parsed.SystemPrompt, parsed.Messages)
 	authID := auth.ID // e.g. "cursor.json" or "cursor-account2.json"
 	log.Debugf("cursor: conversationId=%s authID=%s", conversationId, authID)
 
@@ -1527,6 +1527,21 @@ func extractClaudeCodeSessionId(payload []byte) string {
 	// user_id is a JSON string that needs to be parsed again
 	sid := gjson.Get(userIdStr, "session_id").String()
 	return sid
+}
+
+// Claude Code can issue auxiliary model calls in parallel with the main agent
+// request while reusing the same metadata.session_id. Only the tool-capable
+// chain may claim that explicit Cursor conversation; otherwise an auxiliary
+// request can cancel or overwrite the live MCP session before tool_result is
+// returned. Tool-free calls still get a stable fallback ID from their prompt.
+func cursorPrimarySessionID(sessionID string, parsed *parsedOpenAIRequest) string {
+	if sessionID == "" || parsed == nil {
+		return ""
+	}
+	if len(parsed.Tools) > 0 || len(parsed.ToolResults) > 0 {
+		return sessionID
+	}
+	return ""
 }
 
 // deriveConversationId generates a deterministic conversation_id.

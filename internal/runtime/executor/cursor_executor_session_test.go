@@ -22,6 +22,22 @@ func TestDeriveConversationIDUsesExplicitSessionID(t *testing.T) {
 	}
 }
 
+func TestCursorPrimarySessionIDExcludesToolFreeAuxiliaryCalls(t *testing.T) {
+	main := &parsedOpenAIRequest{Tools: responseMessages(`{"messages":[{}]}`)}
+	resume := &parsedOpenAIRequest{ToolResults: []toolResultInfo{{ToolCallId: "call-1"}}}
+	auxiliary := &parsedOpenAIRequest{}
+
+	if got := cursorPrimarySessionID("session-1", main); got != "session-1" {
+		t.Fatalf("main session ID = %q", got)
+	}
+	if got := cursorPrimarySessionID("session-1", resume); got != "session-1" {
+		t.Fatalf("resume session ID = %q", got)
+	}
+	if got := cursorPrimarySessionID("session-1", auxiliary); got != "" {
+		t.Fatalf("auxiliary session ID = %q, want empty", got)
+	}
+}
+
 func TestDeriveConversationIDSeparatesResponsesConversationsWithoutMetadata(t *testing.T) {
 	mainMessages := responseMessages(`{"messages":[{"role":"user","content":"Use the shell tool to run pwd"}]}`)
 	titleMessages := responseMessages(`{"messages":[{"role":"user","content":"Generate a session title"}]}`)
