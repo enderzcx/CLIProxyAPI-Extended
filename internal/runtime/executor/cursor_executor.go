@@ -605,6 +605,7 @@ func (e *CursorExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
 				}
 			},
 			func(exec pendingMcpExec) {
+				exec.ToolName = cursorClientToolName(exec.ToolName)
 				if thinkingActive {
 					thinkingActive = false
 					sendChunkSwitchable(`{"content":"</think>"}`, "")
@@ -1173,6 +1174,21 @@ type toolResultInfo struct {
 // conditional on declared tools so ordinary text-only requests are unchanged.
 const cursorToolCommitDirective = "You are serving an API request that includes executable tools. When a tool is needed to answer, issue the actual tool call instead of describing the call in prose. Answer directly only when no tool is needed. Do not claim a tool ran unless you called it, and do not emit duplicate calls."
 
+const cursorExternalToolPrefix = "beefapi_external__"
+
+func cursorUpstreamToolName(name string) string {
+	switch strings.ToLower(name) {
+	case "run_terminal_command", "run_terminal_cmd", "bash", "shell", "terminal":
+		return cursorExternalToolPrefix + name
+	default:
+		return name
+	}
+}
+
+func cursorClientToolName(name string) string {
+	return strings.TrimPrefix(name, cursorExternalToolPrefix)
+}
+
 func applyCursorToolCommitDirective(parsed *parsedOpenAIRequest) {
 	if parsed == nil || len(parsed.Tools) == 0 || len(parsed.ToolResults) > 0 {
 		return
@@ -1394,7 +1410,7 @@ func buildRunRequestParams(parsed *parsedOpenAIRequest, conversationId string) *
 	for _, tool := range parsed.Tools {
 		fn := tool.Get("function")
 		params.McpTools = append(params.McpTools, cursorproto.McpToolDef{
-			Name:        fn.Get("name").String(),
+			Name:        cursorUpstreamToolName(fn.Get("name").String()),
 			Description: fn.Get("description").String(),
 			InputSchema: json.RawMessage(fn.Get("parameters").Raw),
 		})

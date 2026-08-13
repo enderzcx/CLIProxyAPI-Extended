@@ -125,3 +125,16 @@ func TestEncodeExecShellStreamSuccessProducesStartOutputAndExit(t *testing.T) {
 		}
 	}
 }
+
+func TestCursorBuiltinShellToolUsesExternalMcpAlias(t *testing.T) {
+	upstream := cursorUpstreamToolName("run_terminal_command")
+	if upstream == "run_terminal_command" {
+		t.Fatal("builtin-colliding shell tool was not aliased")
+	}
+	if got := cursorClientToolName(upstream); got != "run_terminal_command" {
+		t.Fatalf("restored tool name = %q", got)
+	}
+	if got := cursorUpstreamToolName("search_tool"); got != "search_tool" {
+		t.Fatalf("unrelated tool name changed to %q", got)
+	}
+}
