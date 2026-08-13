@@ -12,8 +12,25 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
+
+var (
+	cursorRefreshGroup    singleflight.Group
+	cursorRefreshExchange = refreshTokenExchange
+	cursorRefreshCacheMu  sync.Mutex
+	cursorRefreshCache    = make(map[string]cursorRefreshCacheEntry)
+)
+
+const cursorRefreshCacheTTL = 30 * time.Second
+
+type cursorRefreshCacheEntry struct {
+	tokens    TokenPair
+	expiresAt time.Time
+}
 
 const (
 	CursorLoginURL   = "https://cursor.com/loginDeepControl"
@@ -136,6 +153,59 @@ func PollForAuth(ctx context.Context, uuid, verifier string) (*TokenPair, error)
 
 // RefreshToken refreshes a Cursor access token using the refresh token.
 func RefreshToken(ctx context.Context, refreshToken string) (*TokenPair, error) {
+	if strings.TrimSpace(refreshToken) == "" {
+		return nil, fmt.Errorf("cursor: refresh token is required")
+	}
+	if tokens, ok := cachedCursorRefresh(refreshToken, time.Now()); ok {
+		return tokens, nil
+	}
+
+	result, err, _ := cursorRefreshGroup.Do(refreshToken, func() (any, error) {
+		if tokens, ok := cachedCursorRefresh(refreshToken, time.Now()); ok {
+			return tokens, nil
+		}
+		// A single Cursor account may be present under both a legacy and a
+		// sub-qualified credential filename. Refresh tokens can rotate, so those
+		// records must share one exchange rather than racing the same token.
+		tokens, exchangeErr := cursorRefreshExchange(context.WithoutCancel(ctx), refreshToken)
+		if exchangeErr == nil && tokens != nil {
+			cacheCursorRefresh(refreshToken, *tokens, time.Now().Add(cursorRefreshCacheTTL))
+		}
+		return tokens, exchangeErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	tokens, ok := result.(*TokenPair)
+	if !ok || tokens == nil {
+		return nil, fmt.Errorf("cursor: token refresh returned an invalid result")
+	}
+	copyTokens := *tokens
+	return &copyTokens, nil
+}
+
+func cachedCursorRefresh(refreshToken string, now time.Time) (*TokenPair, bool) {
+	cursorRefreshCacheMu.Lock()
+	defer cursorRefreshCacheMu.Unlock()
+	entry, ok := cursorRefreshCache[refreshToken]
+	if !ok {
+		return nil, false
+	}
+	if !entry.expiresAt.After(now) {
+		delete(cursorRefreshCache, refreshToken)
+		return nil, false
+	}
+	tokens := entry.tokens
+	return &tokens, true
+}
+
+func cacheCursorRefresh(refreshToken string, tokens TokenPair, expiresAt time.Time) {
+	cursorRefreshCacheMu.Lock()
+	cursorRefreshCache[refreshToken] = cursorRefreshCacheEntry{tokens: tokens, expiresAt: expiresAt}
+	cursorRefreshCacheMu.Unlock()
+}
+
+func refreshTokenExchange(ctx context.Context, refreshToken string) (*TokenPair, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, CursorRefreshURL,
