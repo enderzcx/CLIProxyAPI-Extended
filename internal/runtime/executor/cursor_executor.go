@@ -1064,7 +1064,10 @@ func processH2SessionFrames(
 						stream.Write(cursorproto.FrameConnectMessage(cursorproto.EncodeExecShellRejected(msg.ExecMsgId, msg.ExecId, msg.Command, msg.WorkingDirectory, rejectReason), 0))
 						continue
 					}
-					args := map[string]any{"command": msg.Command}
+					args := map[string]any{
+						"command":     msg.Command,
+						"description": "Run the shell command requested by the model",
+					}
 					if msg.WorkingDirectory != "" {
 						args["working_directory"] = msg.WorkingDirectory
 					}
