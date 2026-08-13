@@ -1037,6 +1037,7 @@ func processH2SessionFrames(
 
 						// Send MCP result
 						for _, tr := range toolResults {
+							log.Debugf("cursor: matching MCP result clientCallId=%q pendingCallId=%q", tr.ToolCallId, pending.ToolCallId)
 							if cursorToolCallIDsMatch(tr.ToolCallId, pending.ToolCallId) {
 								log.Debugf("cursor: sending inline MCP result for tool=%s", pending.ToolName)
 								resultBytes := cursorproto.EncodeExecMcpResult(pending.ExecMsgId, pending.ExecId, tr.Content, false)
