@@ -49,6 +49,9 @@ func TestCursorToolCallIDsMatchCompositeResponsesID(t *testing.T) {
 	if !cursorToolCallIDsMatch("call-real\nfc_synthetic_0", "call-real") {
 		t.Fatal("composite Responses ID did not match the pending Cursor call ID")
 	}
+	if !cursorToolCallIDsMatch("fc_synthetic_0", "call-real\nfc_synthetic_0") {
+		t.Fatal("synthetic Responses item ID did not match the composite pending Cursor ID")
+	}
 	if cursorToolCallIDsMatch("fc_synthetic_0", "call-real") {
 		t.Fatal("unrelated synthetic item ID matched the pending Cursor call ID")
 	}

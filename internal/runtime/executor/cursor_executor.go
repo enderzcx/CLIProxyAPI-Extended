@@ -1423,13 +1423,17 @@ func deriveConversationId(apiKey, sessionId, model, systemPrompt string, message
 }
 
 func cursorToolCallIDsMatch(clientID, pendingID string) bool {
-	pendingID = strings.TrimSpace(pendingID)
-	if pendingID == "" {
-		return false
+	pendingParts := make(map[string]struct{})
+	for _, part := range strings.Split(pendingID, "\n") {
+		if part = strings.TrimSpace(part); part != "" {
+			pendingParts[part] = struct{}{}
+		}
 	}
 	for _, part := range strings.Split(clientID, "\n") {
-		if strings.TrimSpace(part) == pendingID {
-			return true
+		if part = strings.TrimSpace(part); part != "" {
+			if _, ok := pendingParts[part]; ok {
+				return true
+			}
 		}
 	}
 	return false
