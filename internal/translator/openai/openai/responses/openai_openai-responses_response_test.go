@@ -134,6 +134,9 @@ func TestConvertOpenAIChatCompletionsResponseToOpenAIResponses_ResponseCompleted
 			if got := completedData.Get("response.usage.total_tokens").Int(); got != tt.totalTokens {
 				t.Fatalf("unexpected response.usage.total_tokens: got %d want %d", got, tt.totalTokens)
 			}
+			if !completedData.Get("response.usage.output_tokens_details").IsObject() {
+				t.Fatalf("expected response.usage.output_tokens_details object, got %s", completedData.Get("response.usage.output_tokens_details").Raw)
+			}
 		})
 	}
 }
