@@ -233,12 +233,25 @@ func refreshTokenExchange(ctx context.Context, refreshToken string) (*TokenPair,
 		return nil, fmt.Errorf("cursor: failed to parse refresh response: %w", err)
 	}
 
-	// Keep original refresh token if not returned
-	if tokens.RefreshToken == "" {
-		tokens.RefreshToken = refreshToken
-	}
+	// exchange_user_api_key accepts a durable Cursor user API key. Its response
+	// currently includes a short-lived JWT in refreshToken; replacing the user
+	// key with that JWT makes the next refresh fail with "Invalid User API Key".
+	// Preserve durable API keys while retaining rotating-token behavior for
+	// credentials obtained through other authentication flows.
+	tokens.RefreshToken = persistentCursorRefreshCredential(refreshToken, tokens.RefreshToken)
 
 	return &tokens, nil
+}
+
+func persistentCursorRefreshCredential(input, returned string) string {
+	trimmed := strings.TrimSpace(input)
+	if strings.HasPrefix(trimmed, "crsr_") || strings.HasPrefix(trimmed, "key_") {
+		return trimmed
+	}
+	if strings.TrimSpace(returned) != "" {
+		return returned
+	}
+	return trimmed
 }
 
 // ParseJWTSub extracts the "sub" claim from a Cursor JWT access token.

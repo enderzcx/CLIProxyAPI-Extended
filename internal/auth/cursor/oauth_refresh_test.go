@@ -66,3 +66,25 @@ func TestRefreshTokenDeduplicatesConcurrentExchange(t *testing.T) {
 		t.Fatalf("immediate duplicate exchange count=%d, want cached result", got)
 	}
 }
+
+func TestPersistentCursorRefreshCredential(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		returned string
+		want     string
+	}{
+		{name: "cursor user api key", input: "crsr_durable", returned: "short-lived-jwt", want: "crsr_durable"},
+		{name: "legacy user api key", input: "key_durable", returned: "short-lived-jwt", want: "key_durable"},
+		{name: "rotating token", input: "old-refresh", returned: "new-refresh", want: "new-refresh"},
+		{name: "missing returned token", input: "old-refresh", want: "old-refresh"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := persistentCursorRefreshCredential(tt.input, tt.returned); got != tt.want {
+				t.Fatalf("persistentCursorRefreshCredential()=%q, want %q", got, tt.want)
+			}
+		})
+	}
+}
