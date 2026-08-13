@@ -1095,7 +1095,8 @@ func processH2SessionFrames(
 						}
 						for _, tr := range toolResults {
 							if cursorToolCallIDsMatch(tr.ToolCallId, pending.ToolCallId) {
-								resultBytes := cursorproto.EncodeExecMcpResult(pending.ExecMsgId, pending.ExecId, tr.Content, false)
+								log.Debugf("cursor: sending builtin shell result clientCallId=%q pendingCallId=%q", tr.ToolCallId, pending.ToolCallId)
+								resultBytes := cursorproto.EncodeExecShellSuccess(pending.ExecMsgId, pending.ExecId, msg.Command, msg.WorkingDirectory, tr.Content)
 								stream.Write(cursorproto.FrameConnectMessage(resultBytes, 0))
 								break
 							}

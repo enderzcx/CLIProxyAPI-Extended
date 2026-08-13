@@ -106,3 +106,10 @@ func TestResolveCursorDeclaredToolNameDoesNotGuessUnrelatedTool(t *testing.T) {
 		t.Fatalf("tool name = %q, want empty", got)
 	}
 }
+
+func TestEncodeExecShellSuccessProducesClientMessage(t *testing.T) {
+	encoded := cursorproto.EncodeExecShellSuccess(7, "exec-1", "pwd", "/workspace", "/workspace\n")
+	if len(encoded) == 0 {
+		t.Fatal("shell success encoded to an empty message")
+	}
+}

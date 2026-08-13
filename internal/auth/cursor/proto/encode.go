@@ -523,6 +523,18 @@ func EncodeExecShellRejected(execMsgId uint32, execId string, command, workDir, 
 	return encodeExecClientMsg(execMsgId, execId, "shell_result", result)
 }
 
+// EncodeExecShellSuccess returns the output of a client-executed shell tool to
+// the builtin Cursor shell request that originated it.
+func EncodeExecShellSuccess(execMsgId uint32, execId string, command, workDir, stdout string) []byte {
+	success := newMsg("ShellSuccess")
+	setStr(success, "command", command)
+	setStr(success, "working_directory", workDir)
+	setStr(success, "stdout", stdout)
+	setMsgResult := newMsg("ShellResult")
+	setMsg(setMsgResult, "success", success)
+	return encodeExecClientMsg(execMsgId, execId, "shell_result", setMsgResult)
+}
+
 func EncodeExecWriteRejected(execMsgId uint32, execId string, path, reason string) []byte {
 	rej := newMsg("WriteRejected")
 	setStr(rej, "path", path)
