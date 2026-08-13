@@ -1061,7 +1061,11 @@ func processH2SessionFrames(
 				case cursorproto.ServerMsgExecShellArgs, cursorproto.ServerMsgExecShellStream:
 					toolName := resolveCursorDeclaredToolName(mcpTools, "run_terminal_command", "run_terminal_cmd", "bash", "shell", "terminal")
 					if toolName == "" || onMcpExec == nil {
-						stream.Write(cursorproto.FrameConnectMessage(cursorproto.EncodeExecShellRejected(msg.ExecMsgId, msg.ExecId, msg.Command, msg.WorkingDirectory, rejectReason), 0))
+						if msg.Type == cursorproto.ServerMsgExecShellStream {
+							stream.Write(cursorproto.FrameConnectMessage(cursorproto.EncodeExecShellStreamRejected(msg.ExecMsgId, msg.ExecId, msg.Command, msg.WorkingDirectory, rejectReason), 0))
+						} else {
+							stream.Write(cursorproto.FrameConnectMessage(cursorproto.EncodeExecShellRejected(msg.ExecMsgId, msg.ExecId, msg.Command, msg.WorkingDirectory, rejectReason), 0))
+						}
 						continue
 					}
 					args := map[string]any{
@@ -1096,8 +1100,14 @@ func processH2SessionFrames(
 						for _, tr := range toolResults {
 							if cursorToolCallIDsMatch(tr.ToolCallId, pending.ToolCallId) {
 								log.Debugf("cursor: sending builtin shell result clientCallId=%q pendingCallId=%q", tr.ToolCallId, pending.ToolCallId)
-								resultBytes := cursorproto.EncodeExecShellSuccess(pending.ExecMsgId, pending.ExecId, msg.Command, msg.WorkingDirectory, tr.Content)
-								stream.Write(cursorproto.FrameConnectMessage(resultBytes, 0))
+								if msg.Type == cursorproto.ServerMsgExecShellStream {
+									for _, resultBytes := range cursorproto.EncodeExecShellStreamSuccess(pending.ExecMsgId, pending.ExecId, msg.WorkingDirectory, tr.Content) {
+										stream.Write(cursorproto.FrameConnectMessage(resultBytes, 0))
+									}
+								} else {
+									resultBytes := cursorproto.EncodeExecShellSuccess(pending.ExecMsgId, pending.ExecId, msg.Command, msg.WorkingDirectory, tr.Content)
+									stream.Write(cursorproto.FrameConnectMessage(resultBytes, 0))
+								}
 								break
 							}
 						}

@@ -113,3 +113,15 @@ func TestEncodeExecShellSuccessProducesClientMessage(t *testing.T) {
 		t.Fatal("shell success encoded to an empty message")
 	}
 }
+
+func TestEncodeExecShellStreamSuccessProducesStartOutputAndExit(t *testing.T) {
+	encoded := cursorproto.EncodeExecShellStreamSuccess(7, "exec-1", "/workspace", "/workspace\n")
+	if len(encoded) != 3 {
+		t.Fatalf("shell stream encoded %d messages, want start, stdout, exit", len(encoded))
+	}
+	for i, message := range encoded {
+		if len(message) == 0 {
+			t.Fatalf("shell stream message %d is empty", i)
+		}
+	}
+}

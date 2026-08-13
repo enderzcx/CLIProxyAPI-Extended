@@ -530,9 +530,45 @@ func EncodeExecShellSuccess(execMsgId uint32, execId string, command, workDir, s
 	setStr(success, "command", command)
 	setStr(success, "working_directory", workDir)
 	setStr(success, "stdout", stdout)
+	setStr(success, "interleaved_output", stdout)
 	setMsgResult := newMsg("ShellResult")
 	setMsg(setMsgResult, "success", success)
 	return encodeExecClientMsg(execMsgId, execId, "shell_result", setMsgResult)
+}
+
+// EncodeExecShellStreamSuccess returns a complete response sequence for
+// shell_stream_args. Cursor treats shell_stream as a streaming RPC and will
+// not resume generation if it receives the unary shell_result shape.
+func EncodeExecShellStreamSuccess(execMsgId uint32, execId, workDir, stdout string) [][]byte {
+	start := newMsg("ShellStream")
+	setMsg(start, "start", newMsg("ShellStreamStart"))
+	frames := [][]byte{encodeExecClientMsg(execMsgId, execId, "shell_stream", start)}
+
+	if stdout != "" {
+		stdoutEvent := newMsg("ShellStreamStdout")
+		setStr(stdoutEvent, "data", stdout)
+		stream := newMsg("ShellStream")
+		setMsg(stream, "stdout", stdoutEvent)
+		frames = append(frames, encodeExecClientMsg(execMsgId, execId, "shell_stream", stream))
+	}
+
+	exit := newMsg("ShellStreamExit")
+	setUint32(exit, "code", 0)
+	setStr(exit, "cwd", workDir)
+	stream := newMsg("ShellStream")
+	setMsg(stream, "exit", exit)
+	frames = append(frames, encodeExecClientMsg(execMsgId, execId, "shell_stream", stream))
+	return frames
+}
+
+func EncodeExecShellStreamRejected(execMsgId uint32, execId, command, workDir, reason string) []byte {
+	rejected := newMsg("ShellRejected")
+	setStr(rejected, "command", command)
+	setStr(rejected, "working_directory", workDir)
+	setStr(rejected, "reason", reason)
+	stream := newMsg("ShellStream")
+	setMsg(stream, "rejected", rejected)
+	return encodeExecClientMsg(execMsgId, execId, "shell_stream", stream)
 }
 
 func EncodeExecWriteRejected(execMsgId uint32, execId string, path, reason string) []byte {
