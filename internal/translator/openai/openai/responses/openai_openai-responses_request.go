@@ -118,7 +118,7 @@ func ConvertOpenAIResponsesRequestToOpenAIChatCompletions(modelName string, inpu
 				toolCall := []byte(`{"id":"","type":"function","function":{"name":"","arguments":""}}`)
 
 				if callId := item.Get("call_id"); callId.Exists() {
-					toolCall, _ = sjson.SetBytes(toolCall, "id", callId.String())
+					toolCall, _ = sjson.SetBytes(toolCall, "id", cursorToolCallID(callId.String()))
 				}
 
 				if name := item.Get("name"); name.Exists() {
@@ -137,7 +137,7 @@ func ConvertOpenAIResponsesRequestToOpenAIChatCompletions(modelName string, inpu
 				toolMessage := []byte(`{"role":"tool","tool_call_id":"","content":""}`)
 
 				if callId := item.Get("call_id"); callId.Exists() {
-					toolMessage, _ = sjson.SetBytes(toolMessage, "tool_call_id", callId.String())
+					toolMessage, _ = sjson.SetBytes(toolMessage, "tool_call_id", cursorToolCallID(callId.String()))
 				}
 
 				if output := item.Get("output"); output.Exists() {
@@ -219,4 +219,16 @@ func ConvertOpenAIResponsesRequestToOpenAIChatCompletions(modelName string, inpu
 	}
 
 	return out
+}
+
+// cursorToolCallID extracts the provider call ID from a Responses compatibility
+// ID that may append the synthetic output-item ID on a second line.
+func cursorToolCallID(value string) string {
+	for _, part := range strings.Split(value, "\n") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			return part
+		}
+	}
+	return strings.TrimSpace(value)
 }
