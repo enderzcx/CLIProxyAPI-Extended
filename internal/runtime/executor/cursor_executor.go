@@ -1585,18 +1585,38 @@ func deriveConversationId(apiKey, sessionId, model, systemPrompt string, message
 }
 
 func cursorToolCallIDsMatch(clientID, pendingID string) bool {
-	pendingParts := make(map[string]struct{})
+	pendingParts := make([]string, 0, 2)
 	for _, part := range strings.Split(pendingID, "\n") {
 		if part = strings.TrimSpace(part); part != "" {
-			pendingParts[part] = struct{}{}
+			pendingParts = append(pendingParts, part)
 		}
 	}
-	for _, part := range strings.Split(clientID, "\n") {
-		if part = strings.TrimSpace(part); part != "" {
-			if _, ok := pendingParts[part]; ok {
-				return true
+	for _, clientPart := range strings.Split(clientID, "\n") {
+		if clientPart = strings.TrimSpace(clientPart); clientPart != "" {
+			for _, pendingPart := range pendingParts {
+				if cursorCompositeIDContains(clientPart, pendingPart) {
+					return true
+				}
 			}
 		}
+	}
+	return false
+}
+
+func cursorCompositeIDContains(composite, part string) bool {
+	for offset := 0; offset <= len(composite)-len(part); {
+		idx := strings.Index(composite[offset:], part)
+		if idx < 0 {
+			return false
+		}
+		start := offset + idx
+		end := start + len(part)
+		leftBoundary := start == 0 || composite[start-1] == '_'
+		rightBoundary := end == len(composite) || composite[end] == '_'
+		if leftBoundary && rightBoundary {
+			return true
+		}
+		offset = start + 1
 	}
 	return false
 }

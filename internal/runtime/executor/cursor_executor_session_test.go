@@ -75,6 +75,12 @@ func TestCursorToolCallIDsMatchCompositeResponsesID(t *testing.T) {
 	if cursorToolCallIDsMatch("fc_synthetic_0", "call-real") {
 		t.Fatal("unrelated synthetic item ID matched the pending Cursor call ID")
 	}
+	if !cursorToolCallIDsMatch("call-real_fc_synthetic_0", "call-real\nfc_synthetic_0") {
+		t.Fatal("Claude Code underscore-composite tool ID did not match Cursor parts")
+	}
+	if cursorToolCallIDsMatch("prefixcall-realpostfix", "call-real\nfc_synthetic_0") {
+		t.Fatal("tool ID matched without composite boundaries")
+	}
 }
 
 func TestParseOpenAIRequestAddsToolCommitDirective(t *testing.T) {
